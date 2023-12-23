@@ -25,7 +25,7 @@ bool client_connection = false; // client connection flag
 bool server_connection = false; // server connection flag
 bool dns_connection = false; // dns conneciton flag
 
-ltl l1 {cor->resend}
+ltl p1 {(<>(Server@cor)->(<>(Thread@resend)))}
 
 proctype Client() {
     int client_req;
@@ -41,6 +41,7 @@ proctype Client() {
               :: nfull(client_to_proxy) ->
                   client_to_proxy ! proxy_addr, client_req;
   accept:         proxy_to_client ?? eval(_pid), server_resp;
+                  assert(server_resp!=CORRUPT)
                   int j = 0;
                   for (j : 0..2){
                     client_resource_owner[j] == _pid ->
@@ -68,8 +69,8 @@ end:      if
               proxy_to_server ?? eval(_pid), proxy_req;
               // Simulate server processing by generating a response
               if 
-cor:          :: (p%5) == 0 -> server_resp = CORRUPT;
-              :: else -> server_resp = _pid;
+              :: (p%5) != 0 -> server_resp = _pid;
+cor:          :: else -> server_resp = CORRUPT;
               fi;
               server_to_proxy ! proxy_req, server_resp;
               resource_owner = 0;
@@ -111,11 +112,11 @@ proctype Thread (int client_req){
 
       //printf("client_connection = %d, server_connection = %d\n", client_connection, server_connection);
       assert(client_connection == true)
-resend:   proxy_to_server ! server_index, _pid;
+L1:   proxy_to_server ! server_index, _pid;
       server_to_proxy ? eval(_pid), server_resp;
       if
-      :: server_resp==CORRUPT -> goto L1;
-      :: else -> skip;
+      :: server_resp!=CORRUPT -> skip;
+resend:      :: else -> goto L1;
       fi;
       server_connection = true;  
       proxy_to_client ! client_req, server_resp;
