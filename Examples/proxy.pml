@@ -2,6 +2,7 @@
 #define MAX_SERVERS 3 // Change this to the number of available servers
 #define TIMEOUT 500
 #define CORRUPT 8080
+#define DISCONNECT 404
 #define MAX_REQUESTS 5
 
 mtype = { DNS_REQUEST, DNS_RESPONSE};
@@ -26,6 +27,8 @@ bool server_connection = false; // server connection flag
 bool dns_connection = false; // dns conneciton flag
 
 ltl p1 {(<>(Server@cor)->(<>(Thread@resend)))}
+ltl p2 {(<>(Server@disconn)->(<>(Client@disconn)))}
+
 
 proctype Client() {
     int client_req;
@@ -42,6 +45,10 @@ proctype Client() {
                   client_to_proxy ! proxy_addr, client_req;
   accept:         proxy_to_client ?? eval(_pid), server_resp;
                   assert(server_resp!=CORRUPT)
+                  if
+                  ::server_resp!=DISCONNECT->skip;
+ disconn:         ::else->skip;
+                  fi;
                   int j = 0;
                   for (j : 0..2){
                     client_resource_owner[j] == _pid ->
@@ -69,7 +76,8 @@ end:      if
               proxy_to_server ?? eval(_pid), proxy_req;
               // Simulate server processing by generating a response
               if 
-              :: (p%5) != 0 -> server_resp = _pid;
+              :: (p%5) != 0 && (p%3) != 0-> server_resp = _pid;
+disconn:              :: (p%3) ==3 -> server_resp = DISCONNECT;
 cor:          :: else -> server_resp = CORRUPT;
               fi;
               server_to_proxy ! proxy_req, server_resp;
@@ -105,10 +113,6 @@ proctype Thread (int client_req){
       // Simulate DNS request to get server IP
       proxy_to_dns ! 5500, _pid;
       dns_to_proxy ? eval(_pid), server_index;
-      
-  
-      // prevent consecutive query to the same server
-      assert(last_req != server_resp); 
 
       //printf("client_connection = %d, server_connection = %d\n", client_connection, server_connection);
       assert(client_connection == true)
@@ -119,6 +123,10 @@ L1:   proxy_to_server ! server_index, _pid;
 resend:      :: else -> goto L1;
       fi;
       server_connection = true;  
+
+      // prevent consecutive query to the same server
+      assert(last_req != server_resp); 
+
       proxy_to_client ! client_req, server_resp;
       if
       :: (server_resp != -1)->
